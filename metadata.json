@@ -1,0 +1,6 @@
+{
+  "name": "FinTrack",
+  "description": "An AI-powered personal finance assistant with real-time analytics, budgeting, savings goals, and smart financial insights.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
