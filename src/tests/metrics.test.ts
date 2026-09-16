@@ -128,7 +128,10 @@ describe('Financial Metrics Calculation Engine', () => {
       mockSubscriptions,
       'EUR'
     );
-    expect(metrics.totalNetWorth).toBe(6000);
+    // Checking: 1000 initial + 1700 net transactions = 2700 EUR
+    // Savings: 5000 initial + 0 transactions = 5000 EUR
+    // Total Net Worth = 2700 + 5000 = 7700 EUR
+    expect(metrics.totalNetWorth).toBe(7700);
   });
 
   it('correctly calculates monthly income, expenses, and net savings', () => {

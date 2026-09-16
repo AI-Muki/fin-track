@@ -6,8 +6,146 @@ import {
   Subscription,
   Currency,
   VerifiedFinancialMetrics,
+  DashboardPeriod,
 } from '@/src/types';
 import { convertCurrency } from './currency';
+
+/**
+ * Calculates deterministic account balance from:
+ * initial balance + income - expenses (plus transfers)
+ *
+ * Credit Card Semantics:
+ * For standard asset accounts (bank, cash, savings, other):
+ * balance = initialBalance + totalIncome - totalExpenses - transfersOut + transfersIn
+ *
+ * For credit card accounts:
+ * Outstanding balance represents the liability / debt owed.
+ * balance = initialBalance + totalExpenses - totalIncome + transfersOut - transfersIn
+ * Payments towards the card reduce the outstanding balance.
+ */
+export function calculateAccountBalance(account: Account, transactions: Transaction[]): number {
+  const initial = account.initialBalance ?? account.balance ?? 0;
+  const accountTxs = transactions.filter(
+    (t) => t.accountId === account.id || t.toAccountId === account.id
+  );
+
+  if (account.type === 'credit_card') {
+    let outstanding = initial;
+    for (const tx of accountTxs) {
+      if (tx.accountId === account.id) {
+        if (tx.type === 'expense') outstanding += tx.amount;
+        else if (tx.type === 'income') outstanding -= tx.amount;
+        else if (tx.type === 'transfer') outstanding += tx.amount;
+      }
+      if (tx.type === 'transfer' && tx.toAccountId === account.id) {
+        // Payment made to credit card reduces debt
+        const originCurrency = tx.currency;
+        const converted = convertCurrency(tx.amount, originCurrency, account.currency);
+        outstanding -= converted;
+      }
+    }
+    return Math.round(outstanding * 100) / 100;
+  }
+
+  // Standard asset accounts (bank, cash, savings, other)
+  let balance = initial;
+  for (const tx of accountTxs) {
+    if (tx.accountId === account.id) {
+      if (tx.type === 'income') balance += tx.amount;
+      else if (tx.type === 'expense') balance -= tx.amount;
+      else if (tx.type === 'transfer') balance -= tx.amount;
+    }
+    if (tx.type === 'transfer' && tx.toAccountId === account.id) {
+      const originCurrency = tx.currency;
+      const converted = convertCurrency(tx.amount, originCurrency, account.currency);
+      balance += converted;
+    }
+  }
+  return Math.round(balance * 100) / 100;
+}
+
+/**
+ * Generates ISO string bounds for Dashboard time period
+ */
+export function getPeriodDateRange(
+  period: DashboardPeriod,
+  customStart?: string,
+  customEnd?: string
+): { startDate: string; endDate: string; label: string } {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+
+  if (period === 'last_month') {
+    const prevMonthDate = new Date(year, month - 1, 1);
+    const lastDayPrevMonth = new Date(year, month, 0);
+    return {
+      startDate: prevMonthDate.toISOString().split('T')[0],
+      endDate: lastDayPrevMonth.toISOString().split('T')[0],
+      label: 'Last Month',
+    };
+  }
+
+  if (period === 'last_3_months') {
+    const start = new Date(year, month - 2, 1);
+    const end = new Date(year, month + 1, 0);
+    return {
+      startDate: start.toISOString().split('T')[0],
+      endDate: end.toISOString().split('T')[0],
+      label: 'Last 3 Months',
+    };
+  }
+
+  if (period === 'last_6_months') {
+    const start = new Date(year, month - 5, 1);
+    const end = new Date(year, month + 1, 0);
+    return {
+      startDate: start.toISOString().split('T')[0],
+      endDate: end.toISOString().split('T')[0],
+      label: 'Last 6 Months',
+    };
+  }
+
+  if (period === 'this_year') {
+    const start = new Date(year, 0, 1);
+    const end = new Date(year, 11, 31);
+    return {
+      startDate: start.toISOString().split('T')[0],
+      endDate: end.toISOString().split('T')[0],
+      label: 'This Year',
+    };
+  }
+
+  if (period === 'custom' && customStart && customEnd) {
+    return {
+      startDate: customStart,
+      endDate: customEnd,
+      label: `${customStart} to ${customEnd}`,
+    };
+  }
+
+  // Default: this_month
+  const firstDay = new Date(year, month, 1);
+  const lastDay = new Date(year, month + 1, 0);
+  return {
+    startDate: firstDay.toISOString().split('T')[0],
+    endDate: lastDay.toISOString().split('T')[0],
+    label: 'This Month',
+  };
+}
+
+/**
+ * Filter transactions deterministically by date period
+ */
+export function filterTransactionsByPeriod(
+  transactions: Transaction[],
+  period: DashboardPeriod,
+  customStart?: string,
+  customEnd?: string
+): Transaction[] {
+  const { startDate, endDate } = getPeriodDateRange(period, customStart, customEnd);
+  return transactions.filter((t) => t.date >= startDate && t.date <= endDate);
+}
 
 /**
  * Calculates verified financial metrics deterministically.
@@ -19,15 +157,24 @@ export function calculateVerifiedMetrics(
   budgets: Budget[],
   goals: SavingsGoal[],
   subscriptions: Subscription[],
-  preferredCurrency: Currency = 'EUR'
+  preferredCurrency: Currency = 'EUR',
+  period: DashboardPeriod = 'this_month',
+  customStart?: string,
+  customEnd?: string
 ): VerifiedFinancialMetrics {
-  // 1. Calculate Total Net Worth across accounts
+  // 1. Calculate deterministic balances for accounts
+  const computedAccounts = accounts.map((acc) => ({
+    ...acc,
+    balance: calculateAccountBalance(acc, transactions),
+  }));
+
+  // Calculate Total Net Worth across accounts
   let totalNetWorth = 0;
-  for (const acc of accounts) {
+  for (const acc of computedAccounts) {
     const balanceInPreferred = convertCurrency(acc.balance, acc.currency, preferredCurrency);
-    if (acc.type === 'credit_card' && balanceInPreferred > 0) {
-      // For credit cards with positive balance (money owed), subtract from net worth
-      totalNetWorth -= balanceInPreferred;
+    if (acc.type === 'credit_card') {
+      // For credit cards, positive balance is outstanding debt -> subtract from net worth
+      totalNetWorth -= Math.max(0, balanceInPreferred);
     } else {
       totalNetWorth += balanceInPreferred;
     }
@@ -42,6 +189,13 @@ export function calculateVerifiedMetrics(
   const prevDate = new Date(currentYear, now.getMonth() - 1, 1);
   const prevMonthStr = `${prevDate.getFullYear()}-${String(prevDate.getMonth() + 1).padStart(2, '0')}`;
 
+  // Period filtering bounds
+  const { startDate: periodStart, endDate: periodEnd } = getPeriodDateRange(
+    period,
+    customStart,
+    customEnd
+  );
+
   let totalIncomeThisMonth = 0;
   let totalExpensesThisMonth = 0;
   let previousMonthIncome = 0;
@@ -53,13 +207,14 @@ export function calculateVerifiedMetrics(
     const txAmountInPref = convertCurrency(tx.amount, tx.currency, preferredCurrency);
     const txMonth = tx.date.substring(0, 7);
 
-    if (txMonth === currentMonthStr) {
+    // Period-filtered income/expense
+    const inPeriod = tx.date >= periodStart && tx.date <= periodEnd;
+    if (inPeriod) {
       if (tx.type === 'income') {
         totalIncomeThisMonth += txAmountInPref;
       } else if (tx.type === 'expense') {
         totalExpensesThisMonth += txAmountInPref;
 
-        // Tally category
         const cat = tx.category || 'Uncategorized';
         if (!categorySpendingMap[cat]) {
           categorySpendingMap[cat] = { amount: 0, count: 0 };
@@ -67,7 +222,10 @@ export function calculateVerifiedMetrics(
         categorySpendingMap[cat].amount += txAmountInPref;
         categorySpendingMap[cat].count += 1;
       }
-    } else if (txMonth === prevMonthStr) {
+    }
+
+    // Previous month comparison
+    if (txMonth === prevMonthStr) {
       if (tx.type === 'income') {
         previousMonthIncome += txAmountInPref;
       } else if (tx.type === 'expense') {

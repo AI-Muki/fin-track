@@ -9,6 +9,7 @@ import { Card } from '@/src/components/ui/Card';
 import { Badge } from '@/src/components/ui/Badge';
 import { Progress } from '@/src/components/ui/Progress';
 import { BudgetModal } from './BudgetModal';
+import { ConfirmModal } from '@/src/components/ui/ConfirmModal';
 
 export const BudgetsView: React.FC = () => {
   const { budgets, deleteBudget, metrics } = useData();
@@ -16,6 +17,8 @@ export const BudgetsView: React.FC = () => {
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingBudget, setEditingBudget] = useState<Budget | null>(null);
+  const [deletingBudgetId, setDeletingBudgetId] = useState<string | null>(null);
+  const [deletingCategory, setDeletingCategory] = useState<string>('');
 
   const totalBudgeted = metrics.budgetAdherence.reduce((sum, b) => sum + b.budgeted, 0);
   const totalSpent = metrics.budgetAdherence.reduce((sum, b) => sum + b.spent, 0);

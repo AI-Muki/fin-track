@@ -26,6 +26,7 @@ export const DEFAULT_USER: UserProfile = {
   monthlyIncomeTarget: 5000,
   savingsRateTarget: 25,
   notificationsEnabled: true,
+  hasCompletedOnboarding: true,
   createdAt: '2026-01-01T00:00:00.000Z',
 };
 
@@ -472,95 +473,367 @@ export const INITIAL_SUBSCRIPTIONS: Subscription[] = [
   },
 ];
 
+export interface StoredUserCredential {
+  id: string;
+  email: string;
+  passwordHash: string;
+  displayName: string;
+  preferredCurrency: Currency;
+  hasCompletedOnboarding: boolean;
+  createdAt: string;
+}
+
+const DEMO_USER_IDS = ['user_default', 'user_founder', 'user_freelancer', 'user_student'];
+
 export const STORAGE = {
-  getProfile(): UserProfile {
+  getActiveUserId(): string | null {
     try {
-      const data = localStorage.getItem(STORAGE_KEYS.PROFILE);
-      return data ? JSON.parse(data) : DEFAULT_USER;
+      return localStorage.getItem('fintrack_active_user_id') || 'user_default';
+    } catch {
+      return 'user_default';
+    }
+  },
+
+  setActiveUserId(userId: string | null): void {
+    if (userId) {
+      localStorage.setItem('fintrack_active_user_id', userId);
+    } else {
+      localStorage.removeItem('fintrack_active_user_id');
+    }
+  },
+
+  getRegisteredUsers(): StoredUserCredential[] {
+    try {
+      const data = localStorage.getItem('fintrack_registered_users');
+      if (data) {
+        return JSON.parse(data);
+      }
+      // Seed default demo user credentials if missing
+      const initialUsers: StoredUserCredential[] = [
+        {
+          id: 'user_default',
+          email: 'mkaramujic80@gmail.com',
+          passwordHash: 'demo1234',
+          displayName: 'FinTrack Member',
+          preferredCurrency: 'EUR',
+          hasCompletedOnboarding: true,
+          createdAt: '2026-01-01T00:00:00Z',
+        },
+        {
+          id: 'user_founder',
+          email: 'founder@fintrack.app',
+          passwordHash: 'founder123',
+          displayName: 'Alex Rivers',
+          preferredCurrency: 'EUR',
+          hasCompletedOnboarding: true,
+          createdAt: '2026-01-01T00:00:00Z',
+        },
+        {
+          id: 'user_freelancer',
+          email: 'freelancer@fintrack.app',
+          passwordHash: 'freelance123',
+          displayName: 'Sara Vance',
+          preferredCurrency: 'BAM',
+          hasCompletedOnboarding: true,
+          createdAt: '2026-02-15T00:00:00Z',
+        },
+        {
+          id: 'user_student',
+          email: 'student@fintrack.app',
+          passwordHash: 'student123',
+          displayName: 'Leo Miller',
+          preferredCurrency: 'USD',
+          hasCompletedOnboarding: true,
+          createdAt: '2026-03-01T00:00:00Z',
+        },
+      ];
+      localStorage.setItem('fintrack_registered_users', JSON.stringify(initialUsers));
+      return initialUsers;
+    } catch {
+      return [];
+    }
+  },
+
+  findUserByEmail(email: string): StoredUserCredential | undefined {
+    const users = this.getRegisteredUsers();
+    return users.find((u) => u.email.toLowerCase() === email.toLowerCase());
+  },
+
+  registerUser(
+    name: string,
+    email: string,
+    passwordHash: string,
+    preferredCurrency: Currency
+  ): { user: UserProfile; success: boolean; message?: string } {
+    const existing = this.findUserByEmail(email);
+    if (existing) {
+      return {
+        user: DEFAULT_USER,
+        success: false,
+        message: 'An account with this email address already exists. Please log in.',
+      };
+    }
+
+    const newId = `user_${Date.now()}`;
+    const newUserRecord: StoredUserCredential = {
+      id: newId,
+      email: email.toLowerCase(),
+      passwordHash,
+      displayName: name,
+      preferredCurrency,
+      hasCompletedOnboarding: false,
+      createdAt: new Date().toISOString(),
+    };
+
+    const currentUsers = this.getRegisteredUsers();
+    currentUsers.push(newUserRecord);
+    localStorage.setItem('fintrack_registered_users', JSON.stringify(currentUsers));
+
+    const userProfile: UserProfile = {
+      id: newId,
+      email: newUserRecord.email,
+      displayName: newUserRecord.displayName,
+      preferredCurrency: newUserRecord.preferredCurrency,
+      theme: 'light',
+      monthlyIncomeTarget: 4000,
+      savingsRateTarget: 20,
+      notificationsEnabled: true,
+      hasCompletedOnboarding: false,
+      createdAt: newUserRecord.createdAt,
+    };
+
+    this.saveProfile(userProfile);
+    this.setActiveUserId(newId);
+
+    // Initialize clean isolated stores for the newly registered user (NO cross-account leakage)
+    this.saveAccounts([], newId);
+    this.saveTransactions([], newId);
+    this.saveBudgets([], newId);
+    this.saveGoals([], newId);
+    this.saveSubscriptions([], newId);
+
+    return { user: userProfile, success: true };
+  },
+
+  authenticateUser(email: string, passwordHash: string): { user: UserProfile | null; error?: string } {
+    const user = this.findUserByEmail(email);
+    if (!user) {
+      return { user: null, error: 'No account found with this email address.' };
+    }
+    if (user.passwordHash !== passwordHash) {
+      return { user: null, error: 'Incorrect password. Please try again.' };
+    }
+
+    const profile: UserProfile = {
+      id: user.id,
+      email: user.email,
+      displayName: user.displayName,
+      preferredCurrency: user.preferredCurrency,
+      theme: 'light',
+      monthlyIncomeTarget: 5000,
+      savingsRateTarget: 25,
+      notificationsEnabled: true,
+      hasCompletedOnboarding: user.hasCompletedOnboarding,
+      createdAt: user.createdAt,
+    };
+
+    this.saveProfile(profile);
+    this.setActiveUserId(user.id);
+    return { user: profile };
+  },
+
+  resetUserPassword(email: string): { success: boolean; message: string } {
+    const user = this.findUserByEmail(email);
+    if (!user) {
+      return {
+        success: false,
+        message: 'If an account exists with this email, reset instructions will be sent.',
+      };
+    }
+    // Simulation token dispatch
+    return {
+      success: true,
+      message: `Password reset link has been dispatched to ${email}.`,
+    };
+  },
+
+  getProfile(userId?: string): UserProfile {
+    const targetId = userId || this.getActiveUserId() || 'user_default';
+    try {
+      const data = localStorage.getItem(`fintrack_${targetId}_profile`);
+      if (data) return JSON.parse(data);
+      // Fallback to registered users record
+      const reg = this.getRegisteredUsers().find((u) => u.id === targetId);
+      if (reg) {
+        return {
+          id: reg.id,
+          email: reg.email,
+          displayName: reg.displayName,
+          preferredCurrency: reg.preferredCurrency,
+          theme: 'light',
+          notificationsEnabled: true,
+          hasCompletedOnboarding: reg.hasCompletedOnboarding,
+          createdAt: reg.createdAt,
+        };
+      }
+      return DEFAULT_USER;
     } catch {
       return DEFAULT_USER;
     }
   },
+
   saveProfile(profile: UserProfile): void {
-    localStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(profile));
-  },
-
-  getAccounts(): Account[] {
     try {
-      const data = localStorage.getItem(STORAGE_KEYS.ACCOUNTS);
-      if (!data) return INITIAL_ACCOUNTS;
-      const parsed = JSON.parse(data);
-      return Array.isArray(parsed) && parsed.length > 0 ? parsed : INITIAL_ACCOUNTS;
-    } catch {
-      return INITIAL_ACCOUNTS;
+      localStorage.setItem(`fintrack_${profile.id}_profile`, JSON.stringify(profile));
+      localStorage.setItem(STORAGE_KEYS.PROFILE, JSON.stringify(profile));
+
+      // Also update in registered users list
+      const users = this.getRegisteredUsers();
+      const idx = users.findIndex((u) => u.id === profile.id);
+      if (idx !== -1) {
+        users[idx].displayName = profile.displayName;
+        users[idx].preferredCurrency = profile.preferredCurrency;
+        users[idx].hasCompletedOnboarding = profile.hasCompletedOnboarding ?? true;
+        localStorage.setItem('fintrack_registered_users', JSON.stringify(users));
+      }
+    } catch (e) {
+      console.error('Failed to save profile', e);
     }
   },
-  saveAccounts(accounts: Account[]): void {
-    localStorage.setItem(STORAGE_KEYS.ACCOUNTS, JSON.stringify(accounts));
-  },
 
-  getTransactions(): Transaction[] {
+  getAccounts(userId?: string): Account[] {
+    const targetId = userId || this.getActiveUserId() || 'user_default';
     try {
-      const data = localStorage.getItem(STORAGE_KEYS.TRANSACTIONS);
-      if (!data) return INITIAL_TRANSACTIONS;
-      const parsed = JSON.parse(data);
-      return Array.isArray(parsed) && parsed.length > 0 ? parsed : INITIAL_TRANSACTIONS;
+      const key = `fintrack_${targetId}_accounts`;
+      const data = localStorage.getItem(key);
+      if (data) {
+        const parsed = JSON.parse(data);
+        return Array.isArray(parsed) ? parsed : [];
+      }
+      // If it's a demo user, initialize demo accounts
+      if (DEMO_USER_IDS.includes(targetId)) {
+        const seeded = INITIAL_ACCOUNTS.map((a) => ({ ...a, userId: targetId }));
+        localStorage.setItem(key, JSON.stringify(seeded));
+        return seeded;
+      }
+      return [];
     } catch {
-      return INITIAL_TRANSACTIONS;
+      return [];
     }
   },
-  saveTransactions(transactions: Transaction[]): void {
-    localStorage.setItem(STORAGE_KEYS.TRANSACTIONS, JSON.stringify(transactions));
+
+  saveAccounts(accounts: Account[], userId?: string): void {
+    const targetId = userId || this.getActiveUserId() || 'user_default';
+    localStorage.setItem(`fintrack_${targetId}_accounts`, JSON.stringify(accounts));
   },
 
-  getBudgets(): Budget[] {
+  getTransactions(userId?: string): Transaction[] {
+    const targetId = userId || this.getActiveUserId() || 'user_default';
     try {
-      const data = localStorage.getItem(STORAGE_KEYS.BUDGETS);
-      if (!data) return INITIAL_BUDGETS;
-      const parsed = JSON.parse(data);
-      return Array.isArray(parsed) && parsed.length > 0 ? parsed : INITIAL_BUDGETS;
+      const key = `fintrack_${targetId}_transactions`;
+      const data = localStorage.getItem(key);
+      if (data) {
+        const parsed = JSON.parse(data);
+        return Array.isArray(parsed) ? parsed : [];
+      }
+      if (DEMO_USER_IDS.includes(targetId)) {
+        const seeded = INITIAL_TRANSACTIONS.map((t) => ({ ...t, userId: targetId }));
+        localStorage.setItem(key, JSON.stringify(seeded));
+        return seeded;
+      }
+      return [];
     } catch {
-      return INITIAL_BUDGETS;
+      return [];
     }
   },
-  saveBudgets(budgets: Budget[]): void {
-    localStorage.setItem(STORAGE_KEYS.BUDGETS, JSON.stringify(budgets));
+
+  saveTransactions(transactions: Transaction[], userId?: string): void {
+    const targetId = userId || this.getActiveUserId() || 'user_default';
+    localStorage.setItem(`fintrack_${targetId}_transactions`, JSON.stringify(transactions));
   },
 
-  getGoals(): SavingsGoal[] {
+  getBudgets(userId?: string): Budget[] {
+    const targetId = userId || this.getActiveUserId() || 'user_default';
     try {
-      const data = localStorage.getItem(STORAGE_KEYS.GOALS);
-      if (!data) return INITIAL_GOALS;
-      const parsed = JSON.parse(data);
-      return Array.isArray(parsed) && parsed.length > 0 ? parsed : INITIAL_GOALS;
+      const key = `fintrack_${targetId}_budgets`;
+      const data = localStorage.getItem(key);
+      if (data) {
+        const parsed = JSON.parse(data);
+        return Array.isArray(parsed) ? parsed : [];
+      }
+      if (DEMO_USER_IDS.includes(targetId)) {
+        const seeded = INITIAL_BUDGETS.map((b) => ({ ...b, userId: targetId }));
+        localStorage.setItem(key, JSON.stringify(seeded));
+        return seeded;
+      }
+      return [];
     } catch {
-      return INITIAL_GOALS;
+      return [];
     }
   },
-  saveGoals(goals: SavingsGoal[]): void {
-    localStorage.setItem(STORAGE_KEYS.GOALS, JSON.stringify(goals));
+
+  saveBudgets(budgets: Budget[], userId?: string): void {
+    const targetId = userId || this.getActiveUserId() || 'user_default';
+    localStorage.setItem(`fintrack_${targetId}_budgets`, JSON.stringify(budgets));
   },
 
-  getSubscriptions(): Subscription[] {
+  getGoals(userId?: string): SavingsGoal[] {
+    const targetId = userId || this.getActiveUserId() || 'user_default';
     try {
-      const data = localStorage.getItem(STORAGE_KEYS.SUBSCRIPTIONS);
-      if (!data) return INITIAL_SUBSCRIPTIONS;
-      const parsed = JSON.parse(data);
-      return Array.isArray(parsed) && parsed.length > 0 ? parsed : INITIAL_SUBSCRIPTIONS;
+      const key = `fintrack_${targetId}_goals`;
+      const data = localStorage.getItem(key);
+      if (data) {
+        const parsed = JSON.parse(data);
+        return Array.isArray(parsed) ? parsed : [];
+      }
+      if (DEMO_USER_IDS.includes(targetId)) {
+        const seeded = INITIAL_GOALS.map((g) => ({ ...g, userId: targetId }));
+        localStorage.setItem(key, JSON.stringify(seeded));
+        return seeded;
+      }
+      return [];
     } catch {
-      return INITIAL_SUBSCRIPTIONS;
+      return [];
     }
   },
-  saveSubscriptions(subscriptions: Subscription[]): void {
-    localStorage.setItem(STORAGE_KEYS.SUBSCRIPTIONS, JSON.stringify(subscriptions));
+
+  saveGoals(goals: SavingsGoal[], userId?: string): void {
+    const targetId = userId || this.getActiveUserId() || 'user_default';
+    localStorage.setItem(`fintrack_${targetId}_goals`, JSON.stringify(goals));
   },
 
-  resetToDemo(): void {
-    localStorage.removeItem(STORAGE_KEYS.PROFILE);
-    localStorage.removeItem(STORAGE_KEYS.ACCOUNTS);
-    localStorage.removeItem(STORAGE_KEYS.TRANSACTIONS);
-    localStorage.removeItem(STORAGE_KEYS.BUDGETS);
-    localStorage.removeItem(STORAGE_KEYS.GOALS);
-    localStorage.removeItem(STORAGE_KEYS.SUBSCRIPTIONS);
+  getSubscriptions(userId?: string): Subscription[] {
+    const targetId = userId || this.getActiveUserId() || 'user_default';
+    try {
+      const key = `fintrack_${targetId}_subscriptions`;
+      const data = localStorage.getItem(key);
+      if (data) {
+        const parsed = JSON.parse(data);
+        return Array.isArray(parsed) ? parsed : [];
+      }
+      if (DEMO_USER_IDS.includes(targetId)) {
+        const seeded = INITIAL_SUBSCRIPTIONS.map((s) => ({ ...s, userId: targetId }));
+        localStorage.setItem(key, JSON.stringify(seeded));
+        return seeded;
+      }
+      return [];
+    } catch {
+      return [];
+    }
+  },
+
+  saveSubscriptions(subscriptions: Subscription[], userId?: string): void {
+    const targetId = userId || this.getActiveUserId() || 'user_default';
+    localStorage.setItem(`fintrack_${targetId}_subscriptions`, JSON.stringify(subscriptions));
+  },
+
+  resetToDemo(userId?: string): void {
+    const targetId = userId || this.getActiveUserId() || 'user_default';
+    localStorage.removeItem(`fintrack_${targetId}_profile`);
+    localStorage.removeItem(`fintrack_${targetId}_accounts`);
+    localStorage.removeItem(`fintrack_${targetId}_transactions`);
+    localStorage.removeItem(`fintrack_${targetId}_budgets`);
+    localStorage.removeItem(`fintrack_${targetId}_goals`);
+    localStorage.removeItem(`fintrack_${targetId}_subscriptions`);
   },
 };

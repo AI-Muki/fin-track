@@ -7,6 +7,7 @@ export const EXCHANGE_RATES: Record<Currency, number> = {
   USD: 1.085,
   GBP: 0.855,
   CHF: 0.952,
+  CAD: 1.485,
 };
 
 export const CURRENCY_SYMBOLS: Record<Currency, string> = {
@@ -15,6 +16,7 @@ export const CURRENCY_SYMBOLS: Record<Currency, string> = {
   USD: '$',
   GBP: '£',
   CHF: 'CHF',
+  CAD: 'C$',
 };
 
 export const CURRENCY_NAMES: Record<Currency, string> = {
@@ -23,6 +25,7 @@ export const CURRENCY_NAMES: Record<Currency, string> = {
   USD: 'US Dollar (USD)',
   GBP: 'British Pound (GBP)',
   CHF: 'Swiss Franc (CHF)',
+  CAD: 'Canadian Dollar (CAD)',
 };
 
 /**

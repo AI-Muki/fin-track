@@ -36,7 +36,7 @@ interface NavbarProps {
 }
 
 export const Navbar: React.FC<NavbarProps> = ({ activeTab, onTabChange }) => {
-  const { user, currency, setCurrency, theme, setTheme } = useAuth();
+  const { user, currency, setCurrency, theme, setTheme, isAuthenticated, openAuthModal } = useAuth();
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
@@ -55,7 +55,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, onTabChange }) => {
     },
   ];
 
-  const currencies: Currency[] = ['EUR', 'BAM', 'USD', 'GBP', 'CHF'];
+  const currencies: Currency[] = ['EUR', 'BAM', 'USD', 'GBP', 'CHF', 'CAD'];
 
   return (
     <>
@@ -133,20 +133,30 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, onTabChange }) => {
                 {theme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4" />}
               </button>
 
-              {/* User Profile trigger */}
-              <button
-                id="user-profile-btn"
-                onClick={() => setIsProfileOpen(true)}
-                className="flex items-center gap-2 p-1.5 pl-2 rounded-lg border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
-                title="Account Settings"
-              >
-                <div className="w-6 h-6 rounded-full bg-indigo-100 dark:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 flex items-center justify-center text-xs font-bold">
-                  {user?.displayName ? user.displayName[0].toUpperCase() : 'U'}
-                </div>
-                <span className="hidden sm:inline text-xs font-medium text-slate-700 dark:text-slate-300 max-w-[100px] truncate">
-                  {user?.displayName || 'User'}
-                </span>
-              </button>
+              {/* User Profile trigger or Sign In */}
+              {isAuthenticated ? (
+                <button
+                  id="user-profile-btn"
+                  onClick={() => setIsProfileOpen(true)}
+                  className="flex items-center gap-2 p-1.5 pl-2 rounded-lg border border-slate-200 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+                  title="Account Settings"
+                >
+                  <div className="w-6 h-6 rounded-full bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 flex items-center justify-center text-xs font-bold">
+                    {user?.displayName ? user.displayName[0].toUpperCase() : 'U'}
+                  </div>
+                  <span className="hidden sm:inline text-xs font-medium text-slate-700 dark:text-slate-300 max-w-[100px] truncate">
+                    {user?.displayName || 'User'}
+                  </span>
+                </button>
+              ) : (
+                <button
+                  id="navbar-login-btn"
+                  onClick={() => openAuthModal('login')}
+                  className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold transition-colors"
+                >
+                  Sign In
+                </button>
+              )}
 
               {/* Mobile menu trigger */}
               <button

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Modal } from '@/src/components/ui/Modal';
 import { Input } from '@/src/components/ui/Input';
 import { Button } from '@/src/components/ui/Button';
+import { ConfirmModal } from '@/src/components/ui/ConfirmModal';
 import { useAuth } from '@/src/features/auth/AuthContext';
 import { useData } from '@/src/features/data/DataContext';
 import { CURRENCY_NAMES } from '@/src/lib/currency';
@@ -14,7 +15,7 @@ interface ProfileModalProps {
 }
 
 export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose }) => {
-  const { user, currency, setCurrency, updateProfile, resetPassword, switchDemoUser } = useAuth();
+  const { user, currency, setCurrency, updateProfile, resetPassword, switchDemoUser, logout } = useAuth();
   const { resetData } = useData();
 
   const [displayName, setDisplayName] = useState(user?.displayName || '');
@@ -22,6 +23,7 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose }) =
   const [incomeTarget, setIncomeTarget] = useState(user?.monthlyIncomeTarget?.toString() || '5000');
   const [savingsTarget, setSavingsTarget] = useState(user?.savingsRateTarget?.toString() || '25');
   const [statusMessage, setStatusMessage] = useState<{ text: string; type: 'success' | 'info' } | null>(null);
+  const [isResetConfirmOpen, setIsResetConfirmOpen] = useState(false);
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
@@ -43,14 +45,12 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose }) =
   };
 
   const handleResetData = () => {
-    if (confirm('Reset all financial data back to the clean default seed?')) {
-      resetData();
-      setStatusMessage({ text: 'Demo database restored to default.', type: 'info' });
-      setTimeout(() => {
-        setStatusMessage(null);
-        onClose();
-      }, 1000);
-    }
+    resetData();
+    setStatusMessage({ text: 'Demo database restored to default seed.', type: 'info' });
+    setTimeout(() => {
+      setStatusMessage(null);
+      onClose();
+    }, 1000);
   };
 
   return (
@@ -176,23 +176,47 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose }) =
               type="button"
               variant="outline"
               size="sm"
-              onClick={handleResetData}
-              className="text-xs text-rose-600 dark:text-rose-400 hover:border-rose-300"
+              onClick={() => setIsResetConfirmOpen(true)}
+              className="text-xs text-amber-600 dark:text-amber-400 hover:border-amber-300"
             >
               <RotateCcw className="w-3.5 h-3.5 mr-1" /> Reset Seed Data
             </Button>
           </div>
         </div>
 
-        <div className="flex justify-end gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
-          <Button type="button" variant="ghost" onClick={onClose}>
-            Cancel
+        <div className="flex items-center justify-between gap-2 pt-3 border-t border-slate-100 dark:border-slate-800">
+          <Button
+            type="button"
+            variant="danger"
+            size="sm"
+            onClick={() => {
+              onClose();
+              logout();
+            }}
+          >
+            Log Out
           </Button>
-          <Button type="submit" variant="primary">
-            Save Changes
-          </Button>
+
+          <div className="flex items-center gap-2">
+            <Button type="button" variant="ghost" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" variant="primary">
+              Save Changes
+            </Button>
+          </div>
         </div>
       </form>
+
+      <ConfirmModal
+        isOpen={isResetConfirmOpen}
+        onClose={() => setIsResetConfirmOpen(false)}
+        onConfirm={handleResetData}
+        title="Reset Financial Data"
+        message="Are you sure you want to reset all your accounts, transactions, budgets, goals, and subscriptions back to the clean default seed data? All custom additions will be replaced."
+        confirmLabel="Reset to Seed Data"
+        variant="warning"
+      />
     </Modal>
   );
 };

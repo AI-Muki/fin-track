@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useMemo } from 'react';
+import React, { createContext, useContext, useState, useMemo, useEffect } from 'react';
 import {
   Account,
   Transaction,
@@ -6,9 +6,10 @@ import {
   SavingsGoal,
   Subscription,
   VerifiedFinancialMetrics,
+  DashboardPeriod,
 } from '@/src/types';
 import { STORAGE } from '@/src/lib/storage';
-import { calculateVerifiedMetrics } from '@/src/lib/metrics';
+import { calculateVerifiedMetrics, calculateAccountBalance } from '@/src/lib/metrics';
 import { useAuth } from '@/src/features/auth/AuthContext';
 import { convertCurrency } from '@/src/lib/currency';
 
@@ -19,6 +20,10 @@ interface DataContextType {
   goals: SavingsGoal[];
   subscriptions: Subscription[];
   metrics: VerifiedFinancialMetrics;
+  dashboardPeriod: DashboardPeriod;
+  setDashboardPeriod: (p: DashboardPeriod) => void;
+  customDateRange: { start: string; end: string };
+  setCustomDateRange: (range: { start: string; end: string }) => void;
 
   // Account operations
   addAccount: (account: Omit<Account, 'id' | 'userId' | 'createdAt' | 'updatedAt'>) => void;
@@ -57,14 +62,35 @@ const DataContext = createContext<DataContextType | undefined>(undefined);
 
 export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, currency } = useAuth();
+  const currentUserId = user?.id || 'user_default';
 
-  const [accounts, setAccounts] = useState<Account[]>(() => STORAGE.getAccounts());
-  const [transactions, setTransactions] = useState<Transaction[]>(() => STORAGE.getTransactions());
-  const [budgets, setBudgets] = useState<Budget[]>(() => STORAGE.getBudgets());
-  const [goals, setGoals] = useState<SavingsGoal[]>(() => STORAGE.getGoals());
-  const [subscriptions, setSubscriptions] = useState<Subscription[]>(() =>
-    STORAGE.getSubscriptions()
+  const [accounts, setAccounts] = useState<Account[]>(() => STORAGE.getAccounts(currentUserId));
+  const [transactions, setTransactions] = useState<Transaction[]>(() =>
+    STORAGE.getTransactions(currentUserId)
   );
+  const [budgets, setBudgets] = useState<Budget[]>(() => STORAGE.getBudgets(currentUserId));
+  const [goals, setGoals] = useState<SavingsGoal[]>(() => STORAGE.getGoals(currentUserId));
+  const [subscriptions, setSubscriptions] = useState<Subscription[]>(() =>
+    STORAGE.getSubscriptions(currentUserId)
+  );
+
+  const [dashboardPeriod, setDashboardPeriod] = useState<DashboardPeriod>('this_month');
+  const [customDateRange, setCustomDateRange] = useState<{ start: string; end: string }>(() => {
+    const today = new Date();
+    const start = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
+    const end = today.toISOString().split('T')[0];
+    return { start, end };
+  });
+
+  // Re-synchronize when authenticated user changes (prevents cross-user data leakage)
+  useEffect(() => {
+    const uid = user?.id || 'user_default';
+    setAccounts(STORAGE.getAccounts(uid));
+    setTransactions(STORAGE.getTransactions(uid));
+    setBudgets(STORAGE.getBudgets(uid));
+    setGoals(STORAGE.getGoals(uid));
+    setSubscriptions(STORAGE.getSubscriptions(uid));
+  }, [user?.id]);
 
   // Compute verified metrics mathematically
   const metrics = useMemo(() => {
@@ -74,36 +100,62 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       budgets,
       goals,
       subscriptions,
-      currency
+      currency,
+      dashboardPeriod,
+      customDateRange.start,
+      customDateRange.end
     );
-  }, [accounts, transactions, budgets, goals, subscriptions, currency]);
+  }, [
+    accounts,
+    transactions,
+    budgets,
+    goals,
+    subscriptions,
+    currency,
+    dashboardPeriod,
+    customDateRange.start,
+    customDateRange.end,
+  ]);
+
+  // Helper to recompute balances dynamically
+  const recomputeAccounts = (accs: Account[], txs: Transaction[]): Account[] => {
+    return accs.map((acc) => ({
+      ...acc,
+      balance: calculateAccountBalance(acc, txs),
+    }));
+  };
 
   // Accounts
   const addAccount = (data: Omit<Account, 'id' | 'userId' | 'createdAt' | 'updatedAt'>) => {
+    const initBal = data.initialBalance ?? data.balance ?? 0;
     const newAcc: Account = {
       ...data,
       id: `acc_${Date.now()}`,
-      userId: user?.id || 'user_default',
+      userId: currentUserId,
+      initialBalance: initBal,
+      balance: initBal,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
     const updated = [newAcc, ...accounts];
-    setAccounts(updated);
-    STORAGE.saveAccounts(updated);
+    const computed = recomputeAccounts(updated, transactions);
+    setAccounts(computed);
+    STORAGE.saveAccounts(computed, currentUserId);
   };
 
   const updateAccount = (id: string, updates: Partial<Account>) => {
     const updated = accounts.map((acc) =>
       acc.id === id ? { ...acc, ...updates, updatedAt: new Date().toISOString() } : acc
     );
-    setAccounts(updated);
-    STORAGE.saveAccounts(updated);
+    const computed = recomputeAccounts(updated, transactions);
+    setAccounts(computed);
+    STORAGE.saveAccounts(computed, currentUserId);
   };
 
   const deleteAccount = (id: string) => {
     const updated = accounts.filter((acc) => acc.id !== id);
     setAccounts(updated);
-    STORAGE.saveAccounts(updated);
+    STORAGE.saveAccounts(updated, currentUserId);
   };
 
   // Transactions with Automatic Account Balance adjustments
@@ -111,73 +163,43 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const newTx: Transaction = {
       ...data,
       id: `tx_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-      userId: user?.id || 'user_default',
+      userId: currentUserId,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
 
-    // Update account balance
-    const updatedAccounts = accounts.map((acc) => {
-      if (acc.id === newTx.accountId) {
-        let diff = 0;
-        if (newTx.type === 'income') diff = newTx.amount;
-        else if (newTx.type === 'expense') diff = -newTx.amount;
-        else if (newTx.type === 'transfer') diff = -newTx.amount;
-        return { ...acc, balance: Math.round((acc.balance + diff) * 100) / 100 };
-      }
-      if (newTx.type === 'transfer' && acc.id === newTx.toAccountId) {
-        // Convert transfer amount if accounts have different currencies
-        const originAcc = accounts.find((a) => a.id === newTx.accountId);
-        const originCurrency = originAcc?.currency || newTx.currency;
-        const converted = convertCurrency(newTx.amount, originCurrency, acc.currency);
-        return { ...acc, balance: Math.round((acc.balance + converted) * 100) / 100 };
-      }
-      return acc;
-    });
-
     const updatedTxList = [newTx, ...transactions];
-    setTransactions(updatedTxList);
-    STORAGE.saveTransactions(updatedTxList);
+    const computedAccounts = recomputeAccounts(accounts, updatedTxList);
 
-    setAccounts(updatedAccounts);
-    STORAGE.saveAccounts(updatedAccounts);
+    setTransactions(updatedTxList);
+    STORAGE.saveTransactions(updatedTxList, currentUserId);
+
+    setAccounts(computedAccounts);
+    STORAGE.saveAccounts(computedAccounts, currentUserId);
   };
 
   const updateTransaction = (id: string, updates: Partial<Transaction>) => {
-    const updated = transactions.map((t) =>
+    const updatedTxList = transactions.map((t) =>
       t.id === id ? { ...t, ...updates, updatedAt: new Date().toISOString() } : t
     );
-    setTransactions(updated);
-    STORAGE.saveTransactions(updated);
+    const computedAccounts = recomputeAccounts(accounts, updatedTxList);
+
+    setTransactions(updatedTxList);
+    STORAGE.saveTransactions(updatedTxList, currentUserId);
+
+    setAccounts(computedAccounts);
+    STORAGE.saveAccounts(computedAccounts, currentUserId);
   };
 
   const deleteTransaction = (id: string) => {
-    const tx = transactions.find((t) => t.id === id);
-    if (tx) {
-      // Revert account balance
-      const updatedAccounts = accounts.map((acc) => {
-        if (acc.id === tx.accountId) {
-          let diff = 0;
-          if (tx.type === 'income') diff = -tx.amount;
-          else if (tx.type === 'expense') diff = tx.amount;
-          else if (tx.type === 'transfer') diff = tx.amount;
-          return { ...acc, balance: Math.round((acc.balance + diff) * 100) / 100 };
-        }
-        if (tx.type === 'transfer' && acc.id === tx.toAccountId) {
-          const originAcc = accounts.find((a) => a.id === tx.accountId);
-          const originCurrency = originAcc?.currency || tx.currency;
-          const converted = convertCurrency(tx.amount, originCurrency, acc.currency);
-          return { ...acc, balance: Math.round((acc.balance - converted) * 100) / 100 };
-        }
-        return acc;
-      });
-      setAccounts(updatedAccounts);
-      STORAGE.saveAccounts(updatedAccounts);
-    }
-
     const updatedTxList = transactions.filter((t) => t.id !== id);
+    const computedAccounts = recomputeAccounts(accounts, updatedTxList);
+
     setTransactions(updatedTxList);
-    STORAGE.saveTransactions(updatedTxList);
+    STORAGE.saveTransactions(updatedTxList, currentUserId);
+
+    setAccounts(computedAccounts);
+    STORAGE.saveAccounts(computedAccounts, currentUserId);
   };
 
   // Budgets
@@ -185,13 +207,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const newBudget: Budget = {
       ...data,
       id: `bud_${Date.now()}`,
-      userId: user?.id || 'user_default',
+      userId: currentUserId,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
     const updated = [...budgets, newBudget];
     setBudgets(updated);
-    STORAGE.saveBudgets(updated);
+    STORAGE.saveBudgets(updated, currentUserId);
   };
 
   const updateBudget = (id: string, updates: Partial<Budget>) => {
@@ -199,13 +221,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       b.id === id ? { ...b, ...updates, updatedAt: new Date().toISOString() } : b
     );
     setBudgets(updated);
-    STORAGE.saveBudgets(updated);
+    STORAGE.saveBudgets(updated, currentUserId);
   };
 
   const deleteBudget = (id: string) => {
     const updated = budgets.filter((b) => b.id !== id);
     setBudgets(updated);
-    STORAGE.saveBudgets(updated);
+    STORAGE.saveBudgets(updated, currentUserId);
   };
 
   // Savings Goals
@@ -213,13 +235,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const newGoal: SavingsGoal = {
       ...data,
       id: `goal_${Date.now()}`,
-      userId: user?.id || 'user_default',
+      userId: currentUserId,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
     const updated = [...goals, newGoal];
     setGoals(updated);
-    STORAGE.saveGoals(updated);
+    STORAGE.saveGoals(updated, currentUserId);
   };
 
   const updateGoal = (id: string, updates: Partial<SavingsGoal>) => {
@@ -227,13 +249,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       g.id === id ? { ...g, ...updates, updatedAt: new Date().toISOString() } : g
     );
     setGoals(updated);
-    STORAGE.saveGoals(updated);
+    STORAGE.saveGoals(updated, currentUserId);
   };
 
   const deleteGoal = (id: string) => {
     const updated = goals.filter((g) => g.id !== id);
     setGoals(updated);
-    STORAGE.saveGoals(updated);
+    STORAGE.saveGoals(updated, currentUserId);
   };
 
   const depositToGoal = (goalId: string, amount: number, fromAccountId?: string) => {
@@ -244,15 +266,11 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     updateGoal(goalId, { currentAmount: newAmount });
 
     if (fromAccountId && amount > 0) {
-      // Deduct from origin account
       const fromAcc = accounts.find((a) => a.id === fromAccountId);
       if (fromAcc) {
         const converted = convertCurrency(amount, goal.currency, fromAcc.currency);
-        updateAccount(fromAccountId, {
-          balance: Math.round((fromAcc.balance - converted) * 100) / 100,
-        });
 
-        // Record as an internal transfer transaction
+        // Record as an internal transfer/savings transaction which recalculates ledger balance
         addTransaction({
           accountId: fromAccountId,
           amount: converted,
@@ -275,13 +293,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const newSub: Subscription = {
       ...data,
       id: `sub_${Date.now()}`,
-      userId: user?.id || 'user_default',
+      userId: currentUserId,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
     const updated = [...subscriptions, newSub];
     setSubscriptions(updated);
-    STORAGE.saveSubscriptions(updated);
+    STORAGE.saveSubscriptions(updated, currentUserId);
   };
 
   const updateSubscription = (id: string, updates: Partial<Subscription>) => {
@@ -289,13 +307,13 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
       s.id === id ? { ...s, ...updates, updatedAt: new Date().toISOString() } : s
     );
     setSubscriptions(updated);
-    STORAGE.saveSubscriptions(updated);
+    STORAGE.saveSubscriptions(updated, currentUserId);
   };
 
   const deleteSubscription = (id: string) => {
     const updated = subscriptions.filter((s) => s.id !== id);
     setSubscriptions(updated);
-    STORAGE.saveSubscriptions(updated);
+    STORAGE.saveSubscriptions(updated, currentUserId);
   };
 
   // CSV Import Batch
@@ -305,24 +323,30 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const created: Transaction[] = newTxList.map((t, idx) => ({
       ...t,
       id: `tx_imported_${Date.now()}_${idx}`,
-      userId: user?.id || 'user_default',
+      userId: currentUserId,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     }));
 
     const combined = [...created, ...transactions];
+    const computedAccounts = recomputeAccounts(accounts, combined);
+
     setTransactions(combined);
-    STORAGE.saveTransactions(combined);
+    STORAGE.saveTransactions(combined, currentUserId);
+
+    setAccounts(computedAccounts);
+    STORAGE.saveAccounts(computedAccounts, currentUserId);
+
     return { importedCount: created.length };
   };
 
   const resetData = () => {
-    STORAGE.resetToDemo();
-    setAccounts(STORAGE.getAccounts());
-    setTransactions(STORAGE.getTransactions());
-    setBudgets(STORAGE.getBudgets());
-    setGoals(STORAGE.getGoals());
-    setSubscriptions(STORAGE.getSubscriptions());
+    STORAGE.resetToDemo(currentUserId);
+    setAccounts(STORAGE.getAccounts(currentUserId));
+    setTransactions(STORAGE.getTransactions(currentUserId));
+    setBudgets(STORAGE.getBudgets(currentUserId));
+    setGoals(STORAGE.getGoals(currentUserId));
+    setSubscriptions(STORAGE.getSubscriptions(currentUserId));
   };
 
   return (
@@ -334,6 +358,10 @@ export const DataProvider: React.FC<{ children: React.ReactNode }> = ({ children
         goals,
         subscriptions,
         metrics,
+        dashboardPeriod,
+        setDashboardPeriod,
+        customDateRange,
+        setCustomDateRange,
         addAccount,
         updateAccount,
         deleteAccount,

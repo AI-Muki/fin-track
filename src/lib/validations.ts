@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
-export const currencyEnum = z.enum(['EUR', 'BAM', 'USD', 'GBP', 'CHF']);
-export const accountTypeEnum = z.enum(['bank', 'cash', 'savings', 'credit_card']);
+export const currencyEnum = z.enum(['EUR', 'BAM', 'USD', 'GBP', 'CHF', 'CAD']);
+export const accountTypeEnum = z.enum(['bank', 'cash', 'savings', 'credit_card', 'other']);
 export const transactionTypeEnum = z.enum(['income', 'expense', 'transfer']);
 export const billingCycleEnum = z.enum(['monthly', 'yearly']);
 
@@ -10,9 +10,34 @@ export const accountSchema = z.object({
   type: accountTypeEnum,
   currency: currencyEnum,
   balance: z.number().finite('Balance must be a valid number'),
+  initialBalance: z.number().finite('Initial balance must be a valid number').optional(),
+  description: z.string().max(200, 'Description too long').optional(),
   accountNumber: z.string().max(34, 'Account number too long').optional(),
   institution: z.string().max(50, 'Institution name too long').optional(),
   color: z.string().optional(),
+});
+
+export const loginSchema = z.object({
+  email: z.string().email('Please enter a valid email address'),
+  password: z.string().min(6, 'Password must be at least 6 characters'),
+  rememberMe: z.boolean().optional(),
+});
+
+export const registerSchema = z
+  .object({
+    name: z.string().min(2, 'Name must be at least 2 characters').max(60),
+    email: z.string().email('Please enter a valid email address'),
+    password: z.string().min(6, 'Password must be at least 6 characters'),
+    confirmPassword: z.string().min(6, 'Please confirm your password'),
+    preferredCurrency: currencyEnum,
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: 'Passwords do not match',
+    path: ['confirmPassword'],
+  });
+
+export const passwordResetSchema = z.object({
+  email: z.string().email('Please enter a valid email address'),
 });
 
 export const transactionSchema = z.object({

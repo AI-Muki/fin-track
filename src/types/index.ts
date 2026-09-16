@@ -1,6 +1,6 @@
-export type Currency = 'EUR' | 'BAM' | 'USD' | 'GBP' | 'CHF';
+export type Currency = 'EUR' | 'BAM' | 'USD' | 'GBP' | 'CHF' | 'CAD';
 
-export type AccountType = 'bank' | 'cash' | 'savings' | 'credit_card';
+export type AccountType = 'bank' | 'cash' | 'savings' | 'credit_card' | 'other';
 
 export interface Account {
   id: string;
@@ -9,6 +9,8 @@ export interface Account {
   type: AccountType;
   currency: Currency;
   balance: number;
+  initialBalance?: number;
+  description?: string;
   accountNumber?: string;
   institution?: string;
   color?: string;
@@ -43,7 +45,9 @@ export interface Budget {
   category: string;
   amount: number;
   currency: Currency;
-  period: 'monthly' | 'yearly';
+  period: 'monthly' | 'yearly' | 'custom';
+  startDate?: string; // YYYY-MM-DD
+  endDate?: string; // YYYY-MM-DD
   month?: string; // YYYY-MM
   alertThresholds?: number[]; // e.g. [75, 90, 100]
   createdAt: string;
@@ -59,7 +63,9 @@ export interface SavingsGoal {
   currency: Currency;
   deadline: string; // YYYY-MM-DD
   category?: string;
+  linkedAccountId?: string;
   color?: string;
+  description?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -74,6 +80,7 @@ export interface Subscription {
   currency: Currency;
   billingCycle: BillingCycle;
   category: string;
+  accountId?: string;
   nextPaymentDate: string; // YYYY-MM-DD
   status: 'active' | 'paused' | 'cancelled';
   notes?: string;
@@ -91,8 +98,17 @@ export interface UserProfile {
   monthlyIncomeTarget?: number;
   savingsRateTarget?: number;
   notificationsEnabled: boolean;
+  hasCompletedOnboarding?: boolean;
   createdAt: string;
 }
+
+export type DashboardPeriod =
+  | 'this_month'
+  | 'last_month'
+  | 'last_3_months'
+  | 'last_6_months'
+  | 'this_year'
+  | 'custom';
 
 export interface VerifiedFinancialMetrics {
   totalNetWorth: number; // Converted to user preferred currency
@@ -165,3 +181,32 @@ export interface DuplicateDetectionResult {
   matchedTransactionId?: string;
   reason?: string;
 }
+
+export const EXPENSE_CATEGORIES = [
+  'Housing & Rent',
+  'Food & Dining',
+  'Groceries',
+  'Transportation & Fuel',
+  'Utilities & Bills',
+  'Entertainment & Leisure',
+  'Healthcare & Medical',
+  'Shopping & Retail',
+  'Education & Training',
+  'Travel & Vacation',
+  'Debt & Loans',
+  'Subscriptions',
+  'Other Expense',
+] as const;
+
+export const INCOME_CATEGORIES = [
+  'Salary & Wages',
+  'Freelance & Consulting',
+  'Investments & Dividends',
+  'Business Profit',
+  'Gifts & Grants',
+  'Refunds',
+  'Other Income',
+] as const;
+
+export const DEFAULT_CATEGORIES = [...EXPENSE_CATEGORIES, ...INCOME_CATEGORIES, 'Transfer'] as const;
+
