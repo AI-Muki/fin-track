@@ -4,8 +4,10 @@ import {
   explainMonthlyChanges,
   suggestSavingsOpportunities,
   autoCategorizeMerchant,
+  heuristicCategorizeMerchant,
   answerFinancialQuestion,
   checkRateLimit,
+  extractCleanErrorMessage,
 } from './gemini';
 import { aiChatSchema } from '../lib/validations';
 
@@ -57,7 +59,7 @@ apiRouter.post('/gemini/analyze', async (req: Request, res: Response) => {
     const analysis = await generateSpendingAnalysis(metrics, currency || 'EUR');
     res.json({ analysis });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Failed to generate spending analysis';
+    const message = extractCleanErrorMessage(error);
     console.error('AI Analysis Error:', message);
     res.status(500).json({ error: message });
   }
@@ -83,7 +85,7 @@ apiRouter.post('/gemini/monthly-changes', async (req: Request, res: Response) =>
     const explanation = await explainMonthlyChanges(metrics, currency || 'EUR');
     res.json({ explanation });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Failed to explain monthly changes';
+    const message = extractCleanErrorMessage(error);
     console.error('AI MoM Error:', message);
     res.status(500).json({ error: message });
   }
@@ -113,7 +115,7 @@ apiRouter.post('/gemini/savings-opportunities', async (req: Request, res: Respon
     );
     res.json({ opportunities });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Failed to generate savings opportunities';
+    const message = extractCleanErrorMessage(error);
     console.error('AI Opportunities Error:', message);
     res.status(500).json({ error: message });
   }
@@ -128,27 +130,17 @@ apiRouter.post('/gemini/categorize', async (req: Request, res: Response) => {
     }
 
     if (!process.env.GEMINI_API_KEY) {
-      // Local keyword matching heuristic fallback
-      const m = merchant.toLowerCase();
-      let category = 'Other';
-      if (/supermarket|grocer|lidl|aldi|rewe|edeka|konzum|market|food|bio/i.test(m)) category = 'Groceries';
-      else if (/uber|taxi|metro|bus|train|transit|fuel|gas|shell|bp/i.test(m)) category = 'Transportation';
-      else if (/netflix|spotify|disney|cinema|movie|steam|playstation/i.test(m)) category = 'Entertainment';
-      else if (/gym|fitness|boulder|health|pharmacy|doctor/i.test(m)) category = 'Health & Fitness';
-      else if (/amazon|retail|zara|h&m|ikea|store/i.test(m)) category = 'Shopping & Retail';
-      else if (/restaurant|trattoria|cafe|coffee|starbucks|pizza|sushi|bistro/i.test(m)) category = 'Dining & Restaurants';
-      else if (/github|aws|google|apple|vercel|cloud|software/i.test(m)) category = 'Software & Tech';
-      else if (/rent|landlord|real estate|wohnung|mortgage/i.test(m)) category = 'Housing & Rent';
-
-      return res.json({ category, confidence: 0.85, suggestedTags: [category.toLowerCase()] });
+      return res.json(heuristicCategorizeMerchant(merchant));
     }
 
     const result = await autoCategorizeMerchant(merchant, amount);
     res.json(result);
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Failed to categorize';
-    console.error('AI Categorize Error:', message);
-    res.status(500).json({ error: message });
+    const message = extractCleanErrorMessage(error);
+    console.warn('AI Categorize Fallback:', message);
+    // Gracefully return heuristic matching so user transaction is never blocked
+    const fallback = heuristicCategorizeMerchant(req.body?.merchant || '');
+    res.json(fallback);
   }
 });
 
@@ -188,7 +180,7 @@ apiRouter.post('/gemini/chat', async (req: Request, res: Response) => {
 
     res.json({ reply });
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Failed to process AI chat';
+    const message = extractCleanErrorMessage(error);
     console.error('AI Chat Error:', message);
     res.status(500).json({ error: message });
   }

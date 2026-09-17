@@ -22,6 +22,29 @@ interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
   timestamp: string;
+  isError?: boolean;
+  canRetry?: boolean;
+  failedPrompt?: string;
+}
+
+function cleanAiResponse(text: unknown, fallback: string): string {
+  if (!text) return fallback;
+  if (typeof text === 'string') {
+    try {
+      const parsed = JSON.parse(text);
+      if (parsed.error && typeof parsed.error.message === 'string') {
+        return parsed.error.message;
+      }
+      if (typeof parsed.message === 'string') {
+        return parsed.message;
+      }
+    } catch {
+      // Return raw string if not JSON
+      return text;
+    }
+    return text;
+  }
+  return fallback;
 }
 
 export const AiAssistantView: React.FC = () => {
@@ -57,7 +80,7 @@ export const AiAssistantView: React.FC = () => {
         body: JSON.stringify({ metrics, currency }),
       });
       const data = await res.json();
-      setActiveAnalysis(data.analysis || data.error || 'No analysis generated.');
+      setActiveAnalysis(cleanAiResponse(data.analysis || data.error, 'No analysis generated.'));
     } catch (e: unknown) {
       setActiveAnalysis('Failed to contact AI service. Please check network connectivity.');
     } finally {
@@ -76,9 +99,9 @@ export const AiAssistantView: React.FC = () => {
         body: JSON.stringify({ metrics, currency }),
       });
       const data = await res.json();
-      setActiveAnalysis(data.explanation || data.error || 'No explanation generated.');
+      setActiveAnalysis(cleanAiResponse(data.explanation || data.error, 'No explanation generated.'));
     } catch (e: unknown) {
-      setActiveAnalysis('Failed to contact AI service.');
+      setActiveAnalysis('Failed to contact AI service. Please check network connectivity.');
     } finally {
       setIsLoadingAnalysis(false);
     }
@@ -99,11 +122,68 @@ export const AiAssistantView: React.FC = () => {
         body: JSON.stringify({ metrics, currency, recurringCost }),
       });
       const data = await res.json();
-      setActiveAnalysis(data.opportunities || data.error || 'No suggestions generated.');
+      setActiveAnalysis(cleanAiResponse(data.opportunities || data.error, 'No suggestions generated.'));
     } catch (e: unknown) {
-      setActiveAnalysis('Failed to contact AI service.');
+      setActiveAnalysis('Failed to contact AI service. Please check network connectivity.');
     } finally {
       setIsLoadingAnalysis(false);
+    }
+  };
+
+  // Send message to AI endpoint
+  const sendQuery = async (userText: string) => {
+    setIsSending(true);
+
+    try {
+      const historyPayload = messages
+        .filter((m) => !m.isError)
+        .slice(-4)
+        .map((m) => ({
+          role: m.role,
+          content: m.content,
+        }));
+
+      const res = await fetch('/api/gemini/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: userText,
+          history: historyPayload,
+          metrics,
+          currency,
+          recentTransactions: transactions.slice(0, 15),
+        }),
+      });
+
+      const data = await res.json();
+      const isFailed = !res.ok && !data.reply;
+      const rawText = data.reply || data.error || "I'm having trouble analyzing your request.";
+      const cleaned = cleanAiResponse(rawText, "I'm having trouble analyzing your request.");
+
+      const aiMsg: ChatMessage = {
+        id: `ai_${Date.now()}`,
+        role: 'assistant',
+        content: cleaned,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        isError: isFailed,
+        canRetry: isFailed,
+        failedPrompt: isFailed ? userText : undefined,
+      };
+
+      setMessages((prev) => [...prev, aiMsg]);
+    } catch (e: unknown) {
+      const errMsg: ChatMessage = {
+        id: `err_${Date.now()}`,
+        role: 'assistant',
+        content: 'Unable to reach the AI engine right now. Please check your connection or retry in a moment.',
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        isError: true,
+        canRetry: true,
+        failedPrompt: userText,
+      };
+      setMessages((prev) => [...prev, errMsg]);
+    } finally {
+      setIsSending(false);
     }
   };
 
@@ -123,48 +203,12 @@ export const AiAssistantView: React.FC = () => {
     };
 
     setMessages((prev) => [...prev, userMsg]);
-    setIsSending(true);
+    await sendQuery(userText);
+  };
 
-    try {
-      const historyPayload = messages.slice(-4).map((m) => ({
-        role: m.role,
-        content: m.content,
-      }));
-
-      const res = await fetch('/api/gemini/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: userText,
-          history: historyPayload,
-          metrics,
-          currency,
-          recentTransactions: transactions.slice(0, 15),
-        }),
-      });
-
-      const data = await res.json();
-      const replyText = data.reply || data.error || "I'm having trouble analyzing your request.";
-
-      const aiMsg: ChatMessage = {
-        id: `ai_${Date.now()}`,
-        role: 'assistant',
-        content: replyText,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      };
-
-      setMessages((prev) => [...prev, aiMsg]);
-    } catch (e: unknown) {
-      const errMsg: ChatMessage = {
-        id: `err_${Date.now()}`,
-        role: 'assistant',
-        content: 'Network error communicating with the financial AI engine.',
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      };
-      setMessages((prev) => [...prev, errMsg]);
-    } finally {
-      setIsSending(false);
-    }
+  const handleRetryPrompt = (failedPrompt?: string) => {
+    if (!failedPrompt || isSending) return;
+    sendQuery(failedPrompt);
   };
 
   return (
@@ -315,14 +359,29 @@ export const AiAssistantView: React.FC = () => {
                   className={`p-3 rounded-2xl text-xs leading-relaxed ${
                     m.role === 'user'
                       ? 'bg-indigo-600 text-white rounded-tr-none'
+                      : m.isError
+                      ? 'bg-rose-50 dark:bg-rose-950/40 text-rose-800 dark:text-rose-200 border border-rose-200 dark:border-rose-900 rounded-tl-none whitespace-pre-line'
                       : 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100 rounded-tl-none whitespace-pre-line'
                   }`}
                 >
                   {m.content}
                 </div>
-                <span className="text-[10px] text-slate-400 mt-1 block px-1">
-                  {m.timestamp}
-                </span>
+                <div className="flex items-center gap-2 mt-1 px-1">
+                  <span className="text-[10px] text-slate-400">
+                    {m.timestamp}
+                  </span>
+                  {m.canRetry && m.failedPrompt && (
+                    <button
+                      type="button"
+                      onClick={() => handleRetryPrompt(m.failedPrompt)}
+                      disabled={isSending}
+                      className="inline-flex items-center gap-1 text-[10px] font-medium text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer disabled:opacity-50"
+                    >
+                      <RefreshCw className="w-2.5 h-2.5" />
+                      Retry
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           ))}
