@@ -1,7 +1,10 @@
 {
-  "name": "react-example",
+  "name": "fintrack",
+  "description": "An AI-powered personal finance assistant with real-time analytics, budgeting, savings goals, and smart financial insights.",
+  "author": "mkaramujic80",
+  "license": "MIT",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite --port=3000 --host=0.0.0.0",

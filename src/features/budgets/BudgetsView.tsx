@@ -191,9 +191,8 @@ export const BudgetsView: React.FC = () => {
                 )}
                 <button
                   onClick={() => {
-                    if (confirm(`Delete budget for ${adherence.category}?`)) {
-                      deleteBudget(adherence.budgetId);
-                    }
+                    setDeletingBudgetId(adherence.budgetId);
+                    setDeletingCategory(adherence.category);
                   }}
                   className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
                   title="Delete budget"
@@ -213,6 +212,23 @@ export const BudgetsView: React.FC = () => {
           setEditingBudget(null);
         }}
         initialBudget={editingBudget}
+      />
+
+      <ConfirmModal
+        isOpen={!!deletingBudgetId}
+        onClose={() => {
+          setDeletingBudgetId(null);
+          setDeletingCategory('');
+        }}
+        onConfirm={() => {
+          if (deletingBudgetId) {
+            deleteBudget(deletingBudgetId);
+          }
+        }}
+        title="Delete Budget"
+        message={`Are you sure you want to delete the budget limit for ${deletingCategory}? Your transaction records will remain unaffected.`}
+        confirmLabel="Delete Budget"
+        variant="danger"
       />
     </div>
   );

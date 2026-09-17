@@ -8,6 +8,7 @@ import { Button } from '@/src/components/ui/Button';
 import { Card } from '@/src/components/ui/Card';
 import { Badge } from '@/src/components/ui/Badge';
 import { SubscriptionModal } from './SubscriptionModal';
+import { ConfirmModal } from '@/src/components/ui/ConfirmModal';
 
 export const SubscriptionsView: React.FC = () => {
   const { subscriptions, deleteSubscription, updateSubscription, metrics } = useData();
@@ -15,6 +16,7 @@ export const SubscriptionsView: React.FC = () => {
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingSub, setEditingSub] = useState<Subscription | null>(null);
+  const [deletingSub, setDeletingSub] = useState<Subscription | null>(null);
 
   const totalMonthlyCost = metrics.totalRecurringMonthlyCost;
   const totalYearlyCost = totalMonthlyCost * 12;
@@ -194,11 +196,7 @@ export const SubscriptionsView: React.FC = () => {
                     <Edit2 className="w-4 h-4" />
                   </button>
                   <button
-                    onClick={() => {
-                      if (confirm(`Remove subscription "${sub.name}"?`)) {
-                        deleteSubscription(sub.id);
-                      }
-                    }}
+                    onClick={() => setDeletingSub(sub)}
                     className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
                     title="Delete subscription"
                   >
@@ -218,6 +216,24 @@ export const SubscriptionsView: React.FC = () => {
           setEditingSub(null);
         }}
         initialSubscription={editingSub}
+      />
+
+      <ConfirmModal
+        isOpen={!!deletingSub}
+        onClose={() => setDeletingSub(null)}
+        onConfirm={() => {
+          if (deletingSub) {
+            deleteSubscription(deletingSub.id);
+          }
+        }}
+        title="Remove Subscription"
+        message={
+          deletingSub
+            ? `Are you sure you want to remove "${deletingSub.name}"? It will no longer be tracked in your recurring expenses.`
+            : ''
+        }
+        confirmLabel="Remove"
+        variant="danger"
       />
     </div>
   );

@@ -10,6 +10,7 @@ import { Badge } from '@/src/components/ui/Badge';
 import { Progress } from '@/src/components/ui/Progress';
 import { GoalModal } from './GoalModal';
 import { DepositModal } from './DepositModal';
+import { ConfirmModal } from '@/src/components/ui/ConfirmModal';
 
 export const GoalsView: React.FC = () => {
   const { goals, deleteGoal, metrics } = useData();
@@ -18,6 +19,7 @@ export const GoalsView: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingGoal, setEditingGoal] = useState<SavingsGoal | null>(null);
   const [depositingGoal, setDepositingGoal] = useState<SavingsGoal | null>(null);
+  const [deletingGoalInfo, setDeletingGoalInfo] = useState<{ id: string; name: string } | null>(null);
 
   return (
     <div className="space-y-6">
@@ -137,9 +139,7 @@ export const GoalsView: React.FC = () => {
                   )}
                   <button
                     onClick={() => {
-                      if (confirm(`Delete goal "${gp.name}"?`)) {
-                        deleteGoal(gp.goalId);
-                      }
+                      setDeletingGoalInfo({ id: gp.goalId, name: gp.name });
                     }}
                     className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors cursor-pointer"
                     title="Delete goal"
@@ -166,6 +166,24 @@ export const GoalsView: React.FC = () => {
         isOpen={Boolean(depositingGoal)}
         onClose={() => setDepositingGoal(null)}
         goal={depositingGoal}
+      />
+
+      <ConfirmModal
+        isOpen={!!deletingGoalInfo}
+        onClose={() => setDeletingGoalInfo(null)}
+        onConfirm={() => {
+          if (deletingGoalInfo) {
+            deleteGoal(deletingGoalInfo.id);
+          }
+        }}
+        title="Delete Savings Goal"
+        message={
+          deletingGoalInfo
+            ? `Are you sure you want to delete the goal "${deletingGoalInfo.name}"? Progress and target records will be removed.`
+            : ''
+        }
+        confirmLabel="Delete Goal"
+        variant="danger"
       />
     </div>
   );
