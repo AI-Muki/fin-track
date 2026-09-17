@@ -7,7 +7,7 @@ import { useAuth } from '@/src/features/auth/AuthContext';
 import { useData } from '@/src/features/data/DataContext';
 import { CURRENCY_NAMES } from '@/src/lib/currency';
 import { Currency } from '@/src/types';
-import { RotateCcw, KeyRound, Check } from 'lucide-react';
+import { RotateCcw, KeyRound, Check, Sun, Moon } from 'lucide-react';
 
 interface ProfileModalProps {
   isOpen: boolean;
@@ -15,7 +15,7 @@ interface ProfileModalProps {
 }
 
 export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose }) => {
-  const { user, currency, setCurrency, updateProfile, resetPassword, switchDemoUser, logout } = useAuth();
+  const { user, currency, setCurrency, theme, setTheme, updateProfile, resetPassword, switchDemoUser, logout } = useAuth();
   const { resetData } = useData();
 
   const [displayName, setDisplayName] = useState(user?.displayName || '');
@@ -113,6 +113,40 @@ export const ProfileModal: React.FC<ProfileModalProps> = ({ isOpen, onClose }) =
           <p className="mt-1 text-[11px] text-slate-500">
             All charts, net worth totals, and metrics will automatically recalculate to this currency.
           </p>
+        </div>
+
+        <div>
+          <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+            Interface Theme
+          </label>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              id="profile-theme-light-btn"
+              onClick={() => setTheme('light')}
+              className={`flex items-center justify-center gap-2 py-2 px-3 rounded-lg border text-xs font-medium cursor-pointer transition-all ${
+                theme === 'light'
+                  ? 'border-indigo-600 bg-indigo-50/50 text-indigo-700 font-semibold shadow-xs dark:bg-indigo-950/40 dark:text-indigo-300 dark:border-indigo-500'
+                  : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
+              }`}
+            >
+              <Sun className="w-3.5 h-3.5 text-amber-500" />
+              <span>Light Mode</span>
+            </button>
+            <button
+              type="button"
+              id="profile-theme-dark-btn"
+              onClick={() => setTheme('dark')}
+              className={`flex items-center justify-center gap-2 py-2 px-3 rounded-lg border text-xs font-medium cursor-pointer transition-all ${
+                theme === 'dark'
+                  ? 'border-indigo-600 bg-indigo-50/50 text-indigo-700 font-semibold shadow-xs dark:bg-indigo-950/40 dark:text-indigo-300 dark:border-indigo-500'
+                  : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800'
+              }`}
+            >
+              <Moon className="w-3.5 h-3.5 text-indigo-400" />
+              <span>Dark Mode</span>
+            </button>
+          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-3">

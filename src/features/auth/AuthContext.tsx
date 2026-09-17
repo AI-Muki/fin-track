@@ -54,6 +54,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const loadedUser = STORAGE.getProfile(activeId);
         setUser(loadedUser);
         setCurrencyState(loadedUser.preferredCurrency || 'EUR');
+        if (loadedUser.theme === 'light' || loadedUser.theme === 'dark') {
+          setThemeState(loadedUser.theme);
+        }
       } else {
         // Default to demo member for instant usability
         setUser(DEFAULT_USER);

@@ -147,8 +147,8 @@ export const AnalyticsView: React.FC = () => {
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={comparisonData} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
-                <XAxis dataKey="period" tick={{ fontSize: 12 }} />
-                <YAxis tick={{ fontSize: 12 }} />
+                <XAxis dataKey="period" tick={{ fontSize: 12, fill: '#94a3b8' }} />
+                <YAxis tick={{ fontSize: 12, fill: '#94a3b8' }} />
                 <Tooltip
                   formatter={(value: any) => [`${value} ${currency}`, '']}
                   contentStyle={{
@@ -224,8 +224,8 @@ export const AnalyticsView: React.FC = () => {
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" opacity={0.15} />
-                <XAxis dataKey="date" tick={{ fontSize: 12 }} />
-                <YAxis tick={{ fontSize: 12 }} />
+                <XAxis dataKey="date" tick={{ fontSize: 12, fill: '#94a3b8' }} />
+                <YAxis tick={{ fontSize: 12, fill: '#94a3b8' }} />
                 <Tooltip
                   formatter={(val: any) => [`${formatCurrency(val, currency)}`, 'Spent']}
                   contentStyle={{

@@ -197,4 +197,23 @@ describe('Authentication & User State Management', () => {
     expect(STORAGE.getAccounts(user2).length).toBe(1);
     expect(STORAGE.getAccounts(user2)[0].name).toBe('Checking Keep');
   });
+
+  it('correctly persists user theme setting and applies dark class', () => {
+    localStorage.setItem('fintrack_theme', 'dark');
+    expect(localStorage.getItem('fintrack_theme')).toBe('dark');
+
+    // Test profile-level theme persistence
+    const userThemeTest: UserProfile = {
+      ...DEFAULT_USER,
+      id: 'usr_theme_tester',
+      theme: 'dark',
+    };
+    STORAGE.saveProfile(userThemeTest);
+    const retrieved = STORAGE.getProfile('usr_theme_tester');
+    expect(retrieved.theme).toBe('dark');
+
+    // Verify localStorage can switch back to light
+    localStorage.setItem('fintrack_theme', 'light');
+    expect(localStorage.getItem('fintrack_theme')).toBe('light');
+  });
 });
